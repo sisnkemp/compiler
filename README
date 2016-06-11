@@ -1,0 +1,154 @@
+========================
+Hobby Project C Compiler
+========================
+
+Introduction
+============
+
+This repository contains a small C compiler I wrote as a student
+from around April to November 2008, before starting with my diploma
+thesis. It is not production-ready, but can compile small and simple
+C programs correctly (e.g. cat and chmod from OpenBSD 4.4).
+
+Highlights:
+- Retargetable: support for PowerPC, AMD64 and i386
+- SSA form
+- Basic optimizations such as dead code elimination
+- Register allocation via graph coloring
+- Code generator is created from a machine grammar
+- Important register allocator data structures are
+  generated from a specification
+
+The PowerPC backend is the most mature. The register allocator can
+sometimes enter endless loops on AMD64. This issue never got debugged.
+The i386 backend is relatively outdated: it was never adapted to the
+auto-generated register allocator data structures.
+
+This compiler was used for the bachelor thesis of one of my
+former students:
+
+- http://www2.cs.fau.de/teaching/thesis/thesis_i2B00446.html
+
+Parts of the code have found their way into the code that I
+wrote for my diploma thesis as well:
+
+- https://www2.cs.fau.de/teaching/thesis/download/i2D00379.pdf
+- https://www2.cs.fau.de/research/zold/Jackal/jitlib.tar.gz
+
+And even today the name table implementation that can be found
+in comp/nametab.c is still used occassionally.
+
+Building
+========
+
+Currently builds on OpenBSD only, but has been ported to Linux
+as well. You need to build tools.cgg2 and tools.rag first:
+
+$ cd tools.cgg2
+$ make depend
+$ make
+$ doas make install
+$ cd ../tools.rag
+$ make depend
+$ make
+$ doas make install
+$ cd ..
+
+Now build the compiler itself
+
+$ make depend
+$ make
+
+Now, lang.c/ should contain the program c_amd64 (if you built on
+OpenBSD/amd64 machine), or c_powerpc if you built on OpenBSD/powerpc.
+You can build a cross-compiler if you set the variable MACHINE_ARCH
+accordingly when invoking the make. Example:
+
+$ make MACHINE_ARCH=powerpc depend
+$ make MACHINE_ARCH=powerpc
+
+Basic Invocation
+================
+
+The compiler itself can parse preprocessed files only. So make sure
+you have done so first, e.g. by running gcc -E input.c > input.i.
+Then run c_amd64 input.i. The compiler writes the generated assembly code
+to stdout. The compiler can dump the intermediate code after every
+optimization/transformation pass by running c_amd64 -I input.i. Dumps
+are placed in the directory the compiler is invoked from.
+
+To produce an executable, run gcc or clang on the generated assembly code.
+Example:
+
+$ c_amd64 input.i > input.s
+$ gcc input.s
+
+There is also the program cc in the folder cc/ that does the
+preprocessing, compiling assembling and linking. However, it
+currently expects the actual compiler (e.g. c_amd64) to be located
+in a hard-coded path. You have to edit cc/cc.c first and edit
+the path accordingly (or implement logic that finds c_amd64 without
+using hard-coded paths).
+
+Source Code Structure
+=====================
+
+The compiler exists of components listed in the directories below.
+
+cc
+--
+
+Compiler driver. Invokes the preprocessor, the compiler itself,
+assembler, linker, etc. Currently relies on the actual compiler to
+reside in a hard-coded directory.
+
+lang.c
+------
+
+The C frontend. Responsible for parsing, AST construction, semantic
+checking, and compiling the AST to the compiler intermediate representation
+(IR).
+
+comp
+----
+
+The actual compiler. Performs analyses and optimizations on the IR.
+Allocates registers and generates assembly code.
+
+powerpc, amd64, i386
+--------------------
+
+The backends for the respective architectures. <arch>.cgg contains
+the machine grammar that maps IR constructs to instructions.
+
+tools.cgg
+---------
+
+The original code-generator-generator (CGG) of the compiler. Creates a
+code generator from a machine grammar that maps IR constructs
+to assembly code as specified by the grammar. It is superseded by tools.cgg2.
+
+tools.cgg2
+----------
+
+An improved version of the original CGG. Produces a faster code-generator
+than the original version. The machine grammar format is still the one
+from tools.cgg.
+
+tools.rag
+---------
+
+A register allocator generator. Actually, the register allocator is
+implemented in comp/. This tool just generates the required data
+structures for the allocator. These data structures describe what
+registers a CPU has, how registers may overlap, etc.
+
+tests.c
+-------
+
+Test cases.
+
+License
+=======
+
+See the file LICENSE and the source code headers.

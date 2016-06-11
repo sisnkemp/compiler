@@ -1,0 +1,37 @@
+/*
+ * Copyright (c) 2008 Stefan Kempf <sisnkemp@gmail.com>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+#ifndef AMD64_TARGCONF_H
+#define AMD64_TARGCONF_H
+
+#include "reg.h"
+
+#define IR_PTR_SIZE	8
+#define IR_PTR_ALIGN	8
+
+#define TARG_AMD64
+#define TARG_BYTE_ORDER	LITTLE_ENDIAN
+
+#define TARG_FRAMEREG	REG_RBP
+#define TARG_FRAMEALIGN	16
+
+#define TARG_FUNCALIGN	8
+
+#define TARG_UIMM_MAX	0xffffffffffffffffULL
+#define TARG_SIMM_MIN	-0x8000000000000000LL
+#define TARG_SIMM_MAX	0x7fffffffffffffffULL
+
+#endif /* AMD64_TARGCONF_H */

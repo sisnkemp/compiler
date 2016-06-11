@@ -1,0 +1,120 @@
+/*
+ * Copyright (c) 2008 Stefan Kempf <sisnkemp@gmail.com>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+volatile al conflicts ax, eax, rax;
+volatile ah conflicts ax, eax, rax;
+bl conflicts bx, ebx, rbx;
+bh conflicts bx, ebx, rbx;
+volatile cl conflicts cx, ecx, rcx;
+volatile ch conflicts cx, ecx, rcx;
+volatile dl conflicts dx, edx, rdx;
+volatile dh conflicts dx, edx, rdx;
+volatile sil conflicts si, esi, rsi;
+volatile dil conflicts di, edi, rdi;
+volatile r8b conflicts r8w, r8d, r8;
+volatile r9b conflicts r9w, r9d, r9;
+volatile r10b conflicts r10w, r10d, r10;
+volatile r11b conflicts r11w, r11d, r11;
+r12b conflicts r12w, r12d, r12;
+r13b conflicts r13w, r13d, r13;
+r14b conflicts r14w, r14d, r14;
+r15b conflicts r15w, r15d, r15;
+
+volatile ax conflicts al, ah, eax, rax;
+bx conflicts bl, bh, ebx, rbx;
+volatile cx conflicts cl, ch, ecx, rcx;
+volatile dx conflicts dl, dh, edx, rdx;
+volatile si conflicts esi, rsi;
+volatile di conflicts edi, rsi;
+volatile r8w conflicts r8b, r8d, r8;
+volatile r9w conflicts r9b, r9d, r9;
+volatile r10w conflicts r10b, r10d, r10;
+volatile r11w conflicts r11b, r11d, r11;
+r12w conflicts r12b, r12d, r12;
+r13w conflicts r13b, r13d, r13;
+r14w conflicts r14b, r14d, r14;
+r15w conflicts r15b, r15d, r15;
+
+volatile eax conflicts al, ah, ax, rax;
+ebx conflicts bl, bh, bx, rbx;
+volatile ecx conflicts cl, ch, cx, rcx;
+volatile edx conflicts dl, dh, dx, rdx;
+volatile esi conflicts si, rsi;
+volatile edi conflicts di, rdi;
+volatile r8d conflicts r8b, r8w, r8;
+volatile r9d conflicts r9b, r9w, r9;
+volatile r10d conflicts r10b, r10w, r10;
+volatile r11d conflicts r11b, r11w, r11;
+r12d conflicts r12b, r12w, r12;
+r13d conflicts r13b, r13w, r13;
+r14d conflicts r13b, r13w, r14;
+r15d conflicts r14b, r14w, r14;
+
+volatile rax conflicts al, ah, ax, eax;
+rbx conflicts bl, bh, bx, ebx;
+volatile rcx conflicts cl, ch, cx, ecx;
+volatile rdx conflicts dl, dh, dx, edx;
+rbp;
+volatile rsi conflicts sil, si, esi;
+volatile rdi conflicts dil, di, edi;
+volatile r8 conflicts r8b, r8w, r8d;
+volatile r9 conflicts r9b, r9w, r9d;
+volatile r10 conflicts r10b, r10w, r10d;
+volatile r11 conflicts r11b, r11w, r11d;
+r12 conflicts r12b, r12w, r12d;
+r13 conflicts r13b, r13w, r13d;
+r14 conflicts r14b, r14w, r14d;
+r15 conflicts r15b, r15w, r15d;
+
+volatile xmm0;
+volatile xmm1;
+volatile xmm2;
+volatile xmm3;
+volatile xmm4;
+volatile xmm5;
+volatile xmm6;
+volatile xmm7;
+volatile xmm8;
+volatile xmm9;
+volatile xmm10;
+volatile xmm11;
+volatile xmm12;
+volatile xmm13;
+volatile xmm14;
+volatile xmm15;
+
+class r8regs = {
+	al, ah, bl, bh, cl, ch, dl, dh, sil, dil, r8b, r9b, r10b, r11b, r12b,
+	r13b, r14b, r15b
+};
+
+class r16regs = {
+	ax, bx, cx, dx, si, di, r8w, r9w, r10w, r11w, r12w, r13w, r14w, r15w
+};
+
+class r32regs = {
+	eax, ebx, ecx, edx, esi, edi, r8d, r9d, r10d, r11d, r12d, r13d, r14d,
+	r15d
+};
+
+class r64regs = {
+	rax, rbx, rcx, rdx, rsi, rdi, r8, r9, r10, r11, r12, r13, r14, r15
+};
+
+class f64regs = {
+	xmm0, xmm1, xmm2, xmm3, xmm4, xmm5, xmm6, xmm7, xmm8, xmm9, xmm10,
+	xmm11, xmm12, xmm13, xmm14, xmm15
+};

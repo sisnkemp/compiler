@@ -1,0 +1,14 @@
+- The ir_bool type may only be used for frontends. When intermediate code
+  is generated, it must be converted into an other type that is appropriate
+  for representing booleans of the source language.
+- Qualified types are only useful for frontends. The backend must work with
+  unqualified types only.
+- For ir_symbols, offsets are in bytes. For ir_typelms inside a struct or
+  unions, the offset is in bits.
+- Optimizations are performed on virtual registers only. Therefore we don't
+  need to care about variables being killed through pointer assignments.
+- Every expression is pointed to only once.
+- Currently, structure passing is not ABI conformant. We always use a
+  hidden first argument where a function returning a struct stores its
+  return value in. Structures passed by value are copied into a temporary
+  structure and a called function gets a pointer to it.

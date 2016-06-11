@@ -1,0 +1,110 @@
+/*
+ * Copyright (c) 2008 Stefan Kempf <sisnkemp@gmail.com>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+volatile r0;
+r1;
+volatile r3 conflicts r3r4;
+volatile r4 conflicts r3r4;
+volatile r5 conflicts r5r6;
+volatile r6 conflicts r5r6;
+volatile r7 conflicts r7r8;
+volatile r8 conflicts r7r8;
+volatile r9 conflicts r9r10;
+volatile r10 conflicts r9r10;
+volatile r11 conflicts r11r12;
+volatile r12 conflicts r11r12;
+r14 conflicts r14r15;
+r15 conflicts r14r15;
+r16 conflicts r16r17;
+r17 conflicts r16r17;
+r18 conflicts r18r19;
+r19 conflicts r18r19;
+r20 conflicts r20r21;
+r21 conflicts r20r21;
+r22 conflicts r22r23;
+r23 conflicts r22r23;
+r24 conflicts r24r25;
+r25 conflicts r24r25;
+r26 conflicts r26r27;
+r27 conflicts r26r27;
+r28 conflicts r28r29;
+r29 conflicts r28r29;
+r30;
+r31;
+
+volatile f0;
+volatile f1;
+volatile f2;
+volatile f3;
+volatile f4;
+volatile f5;
+volatile f6;
+volatile f7;
+volatile f8;
+volatile f9;
+volatile f10;
+volatile f11;
+volatile f12;
+volatile f13;
+f14;
+f15;
+f16;
+f17;
+f18;
+f19;
+f20;
+f21;
+f22;
+f23;
+f24;
+f25;
+f26;
+f27;
+f28;
+f29;
+f30;
+f31;
+
+volatile r3r4 conflicts r3, r4;
+volatile r5r6 conflicts r5, r6;
+volatile r7r8 conflicts r7, r8;
+volatile r9r10 conflicts r9, r10;
+volatile r11r12 conflicts r11, r12;
+r14r15 conflicts r14, r15;
+r16r17 conflicts r16, r17;
+r18r19 conflicts r18, r19;
+r20r21 conflicts r20, r21;
+r22r23 conflicts r22, r23;
+r24r25 conflicts r24, r25;
+r26r27 conflicts r26, r27;
+r28r29 conflicts r28, r29;
+
+class r32regs = {
+	r0, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r14, r15, r16,
+	r17, r18, r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30,
+	r31
+};
+
+class f64regs = {
+	f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15,
+	f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29,
+	f30, f31
+};
+
+class r64regs = {
+	r3r4, r5r6, r7r8, r9r10, r11r12, r14r15, r16r17, r18r19, r20r21,
+	r22r23, r24r25, r26r27, r28r29
+};

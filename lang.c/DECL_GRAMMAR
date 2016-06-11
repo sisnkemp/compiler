@@ -1,0 +1,452 @@
+Introduction
+============
+
+This file shows the grammar transformations that were done in order to
+remove the conflicts of parsing parameter_declarations. In LL(1)
+grammars, the production
+
+parameter_declaration:	declaration_specifiers
+			| declaration_specifiers declarator
+			| declaration_specifiers abstract_declarator
+
+causes a conflict on declarator and abstract_declarator, since '('
+is in both FIRST(declarator) and FIRST(abstract_declarator).
+
+You might immediately see how to resolve the conflict, I had
+to do it with these transformations.
+
+Abbreviations
+=============
+
+d:	declarator
+p:	pointer
+dd:	direct_declarator
+ad:	abstract_declarator
+dad:	direct_abstract_declarator
+pd:	parameter_declaration
+ds:	declaration_specifiers
+expr:	assignment_expression
+idl:	identifier_list
+ptl:	parameter_type_list
+id:	identifier
+
+Terminals
+=========
+
+id, (, ), [, ]
+
+ds, p, idl, ptl and expr are non-terminals in the original C grammar but it's
+sufficient to treat them as terminals here.
+
+All other symbols are non-terminals.
+
+Productions of Interest
+=======================
+
+d:	p+ dd
+	| dd
+	;
+
+dd:	id
+	| ( d )
+	| d [ expr? ]
+	| d ( ptl )
+	| d ( idl? )
+	;
+
+ad:	p+ dad
+	| p+
+	| dad
+	;
+
+dad:	( ad )
+	| [ expr? ]
+	| dad [ expr? ]
+	| ( ptl? )
+	| dad ( ptl? )
+	;
+
+pd:	ds
+	| ds d
+	| ds ad
+	;
+
+Transformation (a)
+==================
+
+Merge d with dd and ad with dad.
+
+d:	p d
+	| id
+	| ( d )
+	| d [ expr? ]
+	| d ( ptl )
+	| d ( idl? )
+	;
+
+ad:	p ad
+	| p
+	| ( ad )
+	| [ expr? ]
+	| ad [ expr? ]
+	| ( ptl? )
+	| ad ( ptl? )
+	;
+
+pd:	ds
+	| ds d
+	| ds ad
+	;
+
+Transformation (b)
+==================
+
+Eliminate left-recursion.
+
+d:	p d
+	| id d1*
+	| ( d ) d1*
+	;
+
+d1:	[ expr? ]
+	| ( ptl )
+	| ( idl? )
+	;
+
+ad:	p ad
+	| p
+	| ( ad ) ad1*
+	| [ expr? ] ad1*
+	| ( ptl? ) ad1*
+	;
+
+ad1:	[ expr? ]
+	| ( ptl? )
+	;
+
+pd:	ds
+	| ds d
+	| ds ad
+	;
+
+Transformation (c)
+==================
+
+Left-factoring.
+
+d:	p d
+	| id d1*
+	| ( d ) d1*
+	;
+
+d1:	[ expr? ]
+	| ( d2
+	;
+
+d2:	ptl )
+	| idl? )
+	;
+
+ad:	p ad3
+	| [ expr? ] ad1*
+	| ( ad2
+	;
+
+ad1:	[ expr? ]
+	| ( ptl? )
+	;
+
+ad2:	ad ) ad1*
+	| ptl? ) ad1*
+	;
+
+ad3:	empty
+	| ad
+	;
+
+pd:	ds pd1
+	;
+
+pd1:	empty
+	| d
+	| ad
+	;
+
+FIRST Sets
+==========
+
+FIRST(d) = { p, id, ( }
+FIRST(ad) = { p, [, ( }
+
+Since both p and ( are in FIRST(d) and FIRST(ad), we can not decide what
+production to take when pd1 is parsed. We need some more transformations
+on pd and pd1.
+
+Transformation (d)
+==================
+
+Put pd1: d | ad into a separate production.
+
+pd:	ds pd1
+	;
+
+pd1:	empty
+	| pdecla
+	;
+
+pdecla:	d
+	| ad
+	;
+
+Transformation (e)
+==================
+
+Factor out p of d and ad and introduce new productions dp and adp that do
+not contain p on their right side.
+
+pd:	ds pd1
+	;
+
+pd1:	empty
+	| pdecla
+	;
+
+pdecla:	p pdecla
+	| p
+	| dp
+	| adp
+	;
+
+dp:	id d1*
+	| ( d ) d1*
+	;
+
+d1:	[ expr? ]
+	| ( d2
+	;
+
+d2:	ptl )
+	| idl? )
+	;
+
+adp:	[ expr? ] ad1*
+	| ( ad2
+	;
+
+ad1:	[ expr? ]
+	| ( ptl? )
+	;
+
+ad2:	ad ) ad1*
+	| ptl? ) ad1*
+	;
+
+Transformation (f)
+==================
+
+Move dp and adp into pdecla.
+
+pd:	ds pd1
+	;
+
+pd1:	empty
+	| pdecla
+	;
+
+pdecla: p pdecla
+	| p
+	| id d1*
+	| ( d ) d1*
+	| [ expr? ] ad1*
+	| ( ad2
+	;
+
+d1:	[ expr? ]
+	| ( d2
+	;
+
+d2:	ptl )
+	| idl? )
+	;
+
+ad1:	[ expr? ]
+	| ( ptl? )
+	;
+
+ad2:	ad ) ad1*
+	| ptl? ) ad1*
+	;
+
+Transformation (g)
+==================
+
+Left-factoring and pull ad2 into pdecla1.
+
+pd:	ds pd1
+	;
+
+pd1:	empty
+	| pdecla
+	;
+
+pdecla:	p pdecla2
+	| id d1*
+	| [ expr? ] d1*
+	| ( pdecla1
+	;
+
+pdecla1:	d ) d1*
+		| ad ) ad1*
+		| ptl? ) ad1*
+		;
+
+pdecla2:	empty
+		| pdecla
+		;
+
+d1:	[ expr? ]
+	| ( d2
+	;
+
+d2:	ptl )
+	| idl? )
+	;
+
+ad1:	[ expr? ]
+	| ( ptl? )
+	;
+
+Transformation (h)
+==================
+
+Note that pdecla1: d | ad is the same as pdecla1: pdecla.
+
+pd:	ds pd1
+	;
+
+pd1:	empty
+	| pdecla
+	;
+
+pdecla:	p pdecla2
+	| id d1*
+	| [ expr? ] d1*
+	| ( pdecla1
+	;
+
+pdecla1:	pdecla ) d1*
+		| pdecla ) ad1*
+		| ptl? ) ad1*
+		;
+
+pdecla2:	empty
+		| pdecla
+		;
+
+d1:	[ expr? ]
+	| ( d2
+	;
+
+d2:	ptl )
+	| idl? )
+	;
+
+ad1:	[ expr? ]
+	| ( ptl? )
+	;
+
+Transformation (i)
+==================
+
+d1 and ad1 are pretty similar, with the exception that abstract declarators
+don't permit identifier lists. We now permit that in the parser and in the
+semantic checking phase, we make sure that parameter type lists in parameter
+declarations do not contain identifier lists.
+Identifier lists are only valid in function definitions.
+
+pd:	ds pd1
+	;
+
+pd1:	empty
+	| pdecla
+	;
+
+pdecla:	p pdecla2
+	| id d1*
+	| [ expr? ] d1*
+	| ( pdecla1
+	;
+
+pdecla1:	pdecla ) d1*
+		| ptl? ) ad1*
+		;
+
+pdecla2:	empty
+		| pdecla
+		;
+
+d1:	[ expr? ]
+	| ( d2
+	;
+
+d2:	ptl )
+	| idl? )
+	;
+
+ad1:	[ expr? ]
+	| ( ptl? )
+	;
+
+Completely tranformed Productions of Interest
+=============================================
+
+d:	p d
+	| id d1*
+	| ( d ) d1*
+	;
+
+d1:	[ expr? ]
+	| ( d2
+	;
+
+d2:	ptl )
+	| idl? )
+	;
+
+ad:	p ad3
+	| [ expr? ] ad1*
+	| ( ad2
+	;
+
+ad1:	[ expr? ]
+	| ( ptl? )
+	;
+
+ad2:	ad ) ad1*
+	| ptl? ) ad1*
+	;
+
+ad3:	empty
+	| ad
+	;
+
+pd:	ds pd1
+	;
+
+pd1:	empty
+	| pdecla
+	;
+
+pdecla:	p pdecla2
+	| id d1*
+	| [ expr? ] d1*
+	| ( pdecla1
+	;
+
+pdecla1:	pdecla ) d1*
+		| ptl? ) ad1*
+		;
+
+pdecla2:	empty
+		| pdecla
+		;

@@ -1,0 +1,132 @@
+Unsorted
+========
+
+- Some kind of normalization pass so that we can create more high-level IR
+  constructs that are transformed into simpler operations.
+- Split the ugly comp.h <-> reg.h cyclic dependency.
+- Extra debug flags for CFG and register allocator dumps, etc.
+- Make structure assignments, arguments and return values ABI conformant.
+- pass_parmfixup should make use of the newly introduced ir_parlocs mechanism.
+- If there are setflags functions, then also provide a clearflags func.
+  Either do both or none of them with function calls.
+- Allow the dead code elimination pass to remove conditional branches too.
+- Cite referenced papers and books properly.
+- Support inline assembly.
+- Improve heuristics that decide whether to include a stack protector for
+  a function.
+- PIC and PIE support.
+- Profiling support.
+- Debugging info.
+- Remove types from the cast patterns in all targets.
+- Unify ir_syminit and ir_init and use ir_init only.
+- Handle *foo = bar type assignments.
+- Handle structure and union assignments.
+- Make ir_asg() get a symbol as its left side, so we don't have to create
+  ir_virtregs all the time?
+- Extra IR instruction for switch statements. A separate pass can then
+  translate it efficiently.
+- Check that we retain type qualifiers for expressions that can yield lvalues.
+- Manage ir_types nametable-like.
+- man pages.
+- Sort token codes for efficient switch statements?
+- Think about recycling ir_exprs, ir_insns and ir_symbols so we
+  don't have to do an xmalloc() or mem_alloc() everytime we need such
+  a structure.
+- Who is responsible for maintaining the 16-byte alignment?
+  The caller, or the callee? How is it done if varargs are used?
+- Full 64-bit support.
+- Support bit fields.
+- Support structure passing by value.
+
+C Frontend
+==========
+
+- Warn if a function marked as __dead could potentially return.
+- Better call un-nesting, so that we don't introduce too much spill
+  code for architectures that have to compute arguments into registers.
+- Make sure that main always returns 0.
+- Improve syntax error recovery.
+- Support hex floats.
+- Proper support for wide chars/strings.
+- Some error messages need to be better.
+- Semantic checks for inline keyword.
+- Make AST construction robust, when it gets handed NULL ptrs due to
+  syntax errors.
+- Support designators only if absolutely necessary.
+- Speed up symbol table search and insertion.
+- ast_semcheck needs to make a final pass over global incomplete array types
+  and make them have 1 element.
+- Be careful when calling cstring for filenames and when they are output
+  in error messages.
+- Check for a description when function types are complete in the C
+  standard.
+- Think about recycling ast_exprs so we don't have to do an xmalloc() or
+  mem_alloc() everytime we need such a structure.
+- Anonymous substructures like kencc supports.
+- Check if it affects compilation time if we generate good jumping code from
+  the start and don't rely on the optimizer.
+
+CC
+==
+
+RAG
+===
+
+- Compress reg_conflicts table like it was done with cg_nts in CGG.
+- It may be worthwhile to make RAG more independent of the actual compiler,
+  like CGG.
+
+CGG
+===
+
+- Some parts of cg_match could probably be made table-driven.
+- An %action name { code } option, that allows use to replace often used
+  code sequences in the patterns used as action { code } with action name.
+  That makes it easy to recognize reused code fragments and reduce the
+  size of cg_actionemit(). Make sure it's worth doing this by checking
+  that gcc can't optimize it by itself at -O2.
+  Think about %emit and %cost too.
+
+Control-Flow Analysis
+=====================
+
+- Do some experiments when Tarjan-Lengauer outperforms the simple one and for
+  each CFG, use the one which is expected to execute faster.
+- There's an O(n^2) algorithm that is supposed to run faster than
+  Tarjan-Lengauer, although the latter runs in O(n*alpha(n,e)).
+  Try out for which input sizes this is true.
+- There's an algorithm for calculating dominance frontiers that might be
+  faster than the current one.
+
+Data-Flow Analysis
+==================
+
+PowerPC Target
+==============
+
+- Is addis %r31, %r1, off@ha; addi %r31, %r1, off@l the right way to
+  calculate the address of a local var or do we need @h in the first
+  instruction? Check the PowerPC manuals properly.
+- Don't use the F code in emit strings, use %r1 directly.
+
+AMD64 Target
+============
+
+- Make the target usable again.
+- Don't map virtual 8 and 16-bit registers to physical 32-bit registers.
+
+i386 Target
+===========
+
+- Make the target usable again.
+- Don't map virtual 8 and 16-bit registers to physical 32-bit registers.
+- Fix FP support with the new register allocator.
+
+Testing
+=======
+
+- Make sure that constant global (initialized) objects go into .rodata.
+- Try rpc.lockd after upgrading to -current.
+- Are address constants recognized properly?
+- Make sure that complicated structure references like a.b.c->d.e etc. work.
+- Test param passing with mixed reg/stack params.

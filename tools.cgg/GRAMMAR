@@ -1,0 +1,49 @@
+cggfile:	header decls '%%' rules '%%' c_code
+		;
+
+header:	/* empty */
+	| '%{' c_code '%}'
+	;
+
+decls:	/* empty */
+	| decl
+	;
+
+decl:	'%nonterm' idents
+	;
+
+idents:	IDENT
+	| IDENT ',' idents
+	;
+
+rules:		/* empty */
+		| IDENT ':' patterns rules
+		;
+
+patterns:	tree action_cost_emit ';'
+		| tree action_cost_emit '|' patterns
+		;
+
+tree:	IDENT constraint
+	| IDENT constraint '(' trees ')'
+	;
+
+trees:	tree
+	| tree ',' trees
+	;
+
+constraint:	'[' c_expr ']'
+		;
+
+action_cost_emit:	/* empty */
+			| action '{' c_expr '}' action_cost_emit
+			| cost '{' c_expr '}' action_cost_emit
+			| emit '{' c_string '}' action_cost_emit
+			;
+
+c_code:	/* empty */
+	| c_grammar
+	;
+
+The parser treats identifiers in all UPPERCASE as tree codes and
+those in lowercase as nonterminals.

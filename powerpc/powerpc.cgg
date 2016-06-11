@@ -1,0 +1,735 @@
+/*
+ * Copyright (c) 2008 Stefan Kempf <sisnkemp@gmail.com>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+%{
+#include <sys/types.h>
+#include <sys/queue.h>
+
+#include <stdio.h>
+
+#include "comp/comp.h"
+#include "comp/ir.h"
+#include "comp/cgi.h"
+
+#define X(n)		((struct ir_expr *)(n))
+#define ICON(n)		(X(n)->ie_con.ic_icon)
+#define UCON(n)		(X(n)->ie_con.ic_ucon)
+#define EXPRTYPE(n)	(X(n)->ie_type)
+#define SIMM(v)		((v) >= -32768 && (v) <= 32765)
+#define UIMM(v)		((v) <= 65535)
+#define IMM(n)								\
+	(IR_ISSIGNED(EXPRTYPE(n)) ? SIMM(ICON(n)) : UIMM(UCON(n)))
+#define IMMOFF(n)	(SIMM(X(n)->ie_sym->is_off))
+#define QIMMOFF(n)	(SIMM(X(n)->ie_sym->is_off + 4))
+
+#define R8(n)		(IR_ISBYTE(EXPRTYPE(n)))
+#define RI8(n)		(IR_ISI8(EXPRTYPE(n)))
+#define RU8(n)		(IR_ISU8(EXPRTYPE(n)))
+#define R16(n)		(IR_ISWORD(EXPRTYPE(n)))
+#define RI16(n)		(IR_ISI16(EXPRTYPE(n)))
+#define RU16(n)		(IR_ISU16(EXPRTYPE(n)))
+#define R32(n)		(IR_ISLONG(EXPRTYPE(n)) || IR_ISPTR(EXPRTYPE(n)))
+#define RI32(n)		(IR_ISI32(EXPRTYPE(n)))
+#define RU32(n)		(IR_ISU32(EXPRTYPE(n)) || IR_ISPTR(EXPRTYPE(n)))
+#define R64(n)		(IR_ISQUAD(EXPRTYPE(n)))
+#define RI64(n)		(IR_ISI64(EXPRTYPE(n)))
+#define RU64(n)		(IR_ISU64(EXPRTYPE(n)))
+#define F64(n)		(IR_ISF64(EXPRTYPE(n)))
+
+#define SAVER31		irfunc->ifm_saver31 = 1
+
+static void asgtogvar(struct cg_ctx *);
+static void asgfromgvar(struct cg_ctx *);
+static void intoreg(struct cg_ctx *);
+static void nor0(struct cg_ctx *, int *);
+
+static int path_l[] = { 0, -1 };
+static int path_r[] = { 1, -1 };
+static int path_ll[] = { 0, 0, -1 };
+static int path_lr[] = { 0, 1, -1 };
+static int path_rl[] = { 1, 0, -1 };
+static int path_rll[] = { 1, 0, 0, -1 };
+static int path_rlr[] = { 1, 0, 1, -1 };
+
+static int r0[] = { REG_R0, -1 };
+static struct regconstr rc_r0 = { r0, RC_FORBIDDEN };
+static struct tmpreg tmp32 = { &rc_r0, &ir_u32 };
+static struct tmpreg *tmp32_1[] = { &tmp32, NULL };
+%}
+
+%nonterm asg, b, cb, insn, st
+%nonterm int8, int16, int32, int64, flt64
+%nonterm dstr8, dstr16, dstr32, dstr64, dstf64
+%nonterm r8, r16, r32, r64, f64
+%nonterm stk8, stk16, stk32, stk64, stkf64
+
+%%
+
+insn:	asg
+	| b
+	| cb
+	| st
+	;
+
+asg:	IR_ASG(dstr8, r8) emit { "\tmr\t@L, @R\n" }
+	| IR_ASG(dstr8, int8) emit { "\tli\t@L, @R\n" }
+	| IR_ASG(dstr8, stk8[IMMOFF(n)]) emit { "\tlbz\t@L, @RO(%r1)\n" }
+	| IR_ASG(dstr8, stk8)
+	    emit {
+		"\tlis\t%r31, @RO@@ha\n"
+		"\taddi\t%r31, %r31, @RO@@l\n"
+		"\tlbzx\t@L, %r1, %r31\n" }
+	    action { SAVER31 }
+
+	| IR_ASG(dstr8, unexpr8) emit { "@R\t#new\n" }
+
+	| IR_ASG(stk8[IMMOFF(n)], r8)
+	    emit { "\tstb\t@R, @LO(%r1)\n" }
+	    action { SAVER31 }
+	| IR_ASG(stk8, r8)
+	    emit {
+		"\tlis\t%r31, @LO@@ha\n"
+		"\taddi\t%r31, %r31, @LO@@l\n"
+		"\tstbx\t@R, %r1, %r31\n" }
+	    action { SAVER31 }
+	| IR_ASG(IR_GVAR[R8(n)], r8) action { asgtogvar(&nctx) }
+	| IR_ASG(dstr16, r16) emit { "\tmr\t@L, @R\n" }
+	| IR_ASG(dstr16, int16) emit { "\tli\t@L, @R\n" }
+	| IR_ASG(dstr16, stk16[IMMOFF(n)]) emit { "\tlhz\t@L, @RO(%r1)\n" }
+	| IR_ASG(dstr16, stk16)
+	    emit {
+		"\tlis\t%r31, @RO@@ha\n"
+		"\taddi\t%r31, %r31, @RO@@l\n"
+		"\tlhzx\t@L, %r1, %r31\n" }
+	    action { SAVER31 }
+
+	| IR_ASG(dstr16, unexpr16) emit { "@R\t#new\n" }
+
+	| IR_ASG(stk16[IMMOFF(n)], r16) emit { "\tsth\t@R, @LO(%r1)\n" }
+	| IR_ASG(stk16, r16)
+	    emit {
+		"\tlis\t%r31, @LO@@ha\n"
+		"\taddi\t%r31, %r31, @LO@@l\n"
+		"\tsthx\t@R, %r1, %r31\n" }
+	    action { SAVER31 }
+	| IR_ASG(IR_GVAR[R16(n)], r16) action { asgtogvar(&nctx) }
+	| IR_ASG(dstr32, r32) emit { "\tmr\t@L, @R\n" }
+	| IR_ASG(dstr32, int32) emit { "@ZLI" }
+	| IR_ASG(dstr32, stk32[IMMOFF(n)]) emit { "\tlwz\t@L, @RO(%r1)\n" }
+	| IR_ASG(dstr32, stk32)
+	    emit {
+		"\tlis\t%r31, @RO@@ha\n"
+		"\taddi\t%r31, %r31, @RO@@l\n"
+		"\tlwzx\t@L, %r1, %r31\n" }
+	    action { SAVER31 }
+	| IR_ASG(dstr32, IR_GADDR)
+	    emit {
+		"\tlis\t@L, @R@@ha\n"
+		"\taddi\t@L, @L, @R@@l\n" }
+	    action { nor0(&nctx, path_l) }
+	| IR_ASG(dstr32, IR_LADDR[IMMOFF(n)]) emit { "\taddi\t@L, %r1, @RO\n" }
+	| IR_ASG(dstr32, IR_LADDR) emit {
+		"\taddis\t@L, %r1, @RO@@ha\n"
+		"\taddi\t@L, %r1, @RO@@l\n" }
+	| IR_ASG(dstr32, IR_GVAR[R32(n)]) action { asgfromgvar(&nctx) }
+
+	| IR_ASG(dstr32, IR_CAST[R32(n)](r8[RI8(n)])) emit {
+		"\textsb\t@L, @RL\n" }
+	| IR_ASG(dstr32, IR_CAST[R32(n)](r8[RU8(n)])) emit {
+		"\trlwinm\t@L, @RL, 0, 24, 31\n" }
+	| IR_ASG(dstr32, IR_CAST[R32(n)](r16[RI16(n)])) emit {
+		"\textsh\t@L, @RL\n" }
+	| IR_ASG(dstr32, IR_CAST[R32(n)](r16[RU16(n)])) emit {
+		"\trlwinm\t@L, @RL, 0, 16, 31\n" }
+	| IR_ASG(dstr32, IR_CAST[R32(n)](r32)) emit { "\tmr\t@L, @RL\n" }
+	| IR_ASG(dstr32, IR_CAST[R32(n)](r64)) emit { "\tmr\t@L, @RLS\n" }
+	| IR_ASG(dstr32, IR_CAST[RI32(n)](f64)) emit {
+		"\tfctiwz\t@RL, @RL\n"
+		"\tstfd\t@RL, 8(%r1)\n"
+		"\tlwz\t@L, 12(%r1)\n" }
+
+	| IR_ASG(dstr32, unexpr32) emit { "@R\t#new\n" }
+	| IR_ASG(dstr32, binexpr32) emit { "@R\t#new\n" }
+
+	| IR_ASG(stk32[IMMOFF(n)], r32) emit { "\tstw\t@R, @LO(%r1)\n" }
+	| IR_ASG(stk32, r32)
+	    emit {
+		"\tlis\t%r31, @LO@@ha\n"
+		"\taddi\t%r31, %r31, @LO@@l\n"
+		"\tstwx\t@R, %r1, %r31\n" }
+	    action { SAVER31 }
+	| IR_ASG(IR_GVAR[R32(n)], r32) action { asgtogvar(&nctx) }
+
+	| IR_ASG(dstr64, r64) emit {
+		"\tmr\t@LP, @RP\n"
+		"\tmr\t@LS, @RS\n" }
+	| IR_ASG(dstr64, int64) emit { "@ZQI" }
+	| IR_ASG(dstr64, stk64[QIMMOFF(n)])
+	    emit {
+		"\tlwz\t@LP, (@RO + 4)(%r1)\n"
+		"\tlwz\t@LS, @RO(%r1)\n" }
+	| IR_ASG(dstr64, stk64)
+	    emit {
+	    	"\taddis\t%r31, %r1, @RO@@ha\n"
+		"\taddi\t%r31, %r31, @RO@@l\n"
+		"\tlwz\t@LP, 4(%r31)\n"
+		"\tlwz\t@LS, 0(%r31)\n" }
+	    action { SAVER31 }
+	| IR_ASG(dstr64, IR_CAST[R64(n)](r32[RI32(n)])) emit {
+		"#fix!\ti32 -> u64\n" }
+	| IR_ASG(dstr64, IR_CAST[R64(n)](r32[RU32(n)])) emit {
+		"#fix!\tu32 -> u64\n" }
+	| IR_ASG(dstr64, IR_LOAD[R64(n)](r32))
+	    emit {
+		"\tlwz\t@LP, 4(@RL)\n"
+		"\tlwz\t@LS, 0(@RL)\n" }
+	    action { nor0(&nctx, path_rl) }
+
+	| IR_ASG(dstr64, binexpr64) emit { "@R\t#new\n" }
+
+	| IR_ASG(stk64[QIMMOFF(n)], r64) emit {
+		"\tstw\t@RS, @LO(%r1)\n"
+		"\tstw\t@RP, (@LO + 4)(%r1)\n" }
+	| IR_ASG(stk64, r64)
+	    emit {
+		"\taddis\t%r31, %r1, @LO@@ha\n"
+		"\taddi\t%r31, %r31, @LO@l\n"
+		"\tstw\t@RP, 4(%r31)\n"
+		"\tstw\t@RS, 0(%r31)\n" }
+	    action { SAVER31 }
+
+	| IR_ASG(dstf64, f64) emit { "\tfmr\t@L, @R\n" }
+	| IR_ASG(dstf64, flt64) emit { "@ZLD" }
+	| IR_ASG(dstf64, stkf64[IMMOFF(n)]) emit { "\tlfd\t@L, @RO(%r1)\n" }
+	| IR_ASG(dstf64, stkf64)
+	    emit {
+		"\taddis\t%r31, %r1, @RO@@ha\n"
+		"\taddi\t%r31, %r31, @RO@l\n"
+		"\tlfd\t@L, 0(%r31)\n" }
+	    action { SAVER31 }
+	| IR_ASG(dstf64, IR_GVAR[F64(n)]) action { asgfromgvar(&nctx) }
+	| IR_ASG(dstf64, IR_CAST[F64(n)](r32)) emit {
+		"\tlis\t%r0, 0x4330\n"
+		"\tlis\t%r2, 0x8000\n"
+		"\tstw\t%r0, 8(%r1)\n"
+		"\tstw\t%r2, 12(%r1)\n"
+		"\tlfd\t%f0, 8(%r1)\n"
+		"\txoris\t@RL, @RL, 0x8000\n"
+		"\tstw\t@RL, 12(%r1)\n"
+		"\tlfd\t@L, 8(%r1)\n"
+		"\tfsub\t@L, @L, %f0\n" }
+
+	| IR_ASG(dstf64, IR_LOAD[F64(n)](r32))
+	    emit { "\tlfd\t@L, 0(@RL)\n" }
+	    action { nor0(&nctx, path_rl) }
+	| IR_ASG(dstf64, IR_LOAD[F64(n)](IR_ADD(r32, simm)))
+	    emit {
+		"\tlfd\t@L, @RLRD(@RLL)\n" }
+	    action { nor0(&nctx, path_rll) }
+	| IR_ASG(dstf64, IR_LOAD[F64(n)](IR_ADD(simm, r32)))
+	    emit {
+		"\tlfd\t@L, @RLLD(@RLR)\n" }
+	    action { nor0(&nctx, path_rlr) }
+
+	| IR_ASG(dstf64, IR_MUL(f64, f64)) emit { "\tfmul\t@L, @RL, @RR\n" }
+	| IR_ASG(dstf64, IR_DIV(f64, f64)) emit { "\tfdiv\t@L, @RL, @RR\n" }
+	| IR_ASG(dstf64, IR_ADD(f64, f64)) emit { "\tfadd\t@L, @RL, @RR\n" }
+	| IR_ASG(dstf64, IR_SUB(f64, f64)) emit { "\tfsub\t@L, @RL, @RR\n" }
+
+	| IR_ASG(stkf64[IMMOFF(n)], f64) emit { "\tstfd\t@R, @LO(%r1)\n" }
+	| IR_ASG(stkf64, f64)
+	    emit {
+		"\taddis\t%r31, %r1, @LO@@ha\n"
+		"\taddi\t%r31, %r31, @LO@@l\n"
+		"\tstfd\t@R, 0(%r31)\n" }
+	    action { SAVER31 }
+	;
+
+st:	IR_ST(r32, r8)
+	    emit { "\tstb\t@R, 0(@L)\n" }
+	    action { nor0(&nctx, path_l) }
+	| IR_ST(r32, r16)
+	    emit { "\tsth\t@R, 0(@L)\n" }
+	    action { nor0(&nctx, path_l) }
+	| IR_ST(r32, r32)
+	    emit { "\tstw\t@R, 0(@L)\n" }
+	    action { nor0(&nctx, path_l) }
+	| IR_ST(IR_ADD(r32, simm), r32)
+	    emit { "\tstw\t@R, @LRD(@LL)\n" }
+	    action { nor0(&nctx, path_ll) }
+	| IR_ST(IR_ADD(simm, r32), r32)
+	    emit { "\tstw\t@R, @LLD(@LR)\n" }
+	    action { nor0(&nctx, path_lr) }
+	| IR_ST(r32, r64)
+	    emit {
+		"\tstw\t@RP, 4(@L)\n"
+		"\tstw\t@RS, 0(@L)\n" }
+	    action { nor0(&nctx, path_l) }
+	| IR_ST(r32, f64)
+	    emit { "\tstfd\t@R, 0(@L)\n" }
+	    action { nor0(&nctx, path_l) }
+	;
+
+b:	IR_B emit { "\tb\t@T\n" }
+	;
+
+cb:	IR_BEQ(r32[RI32(n)], r32) emit {
+		"\tcmpw\t@L, @R\n"
+		"\tbeq\t@T\n" }
+	| IR_BNE(r32[RI32(n)], r32) emit {
+		"\tcmpw\t@L, @R\n"
+		"\tbne\t@T\n" }
+	| IR_BLT(r32[RI32(n)], r32) emit {
+		"\tcmpw\t@L, @R\n"
+		"\tblt\t@T\n" }
+	| IR_BLE(r32[RI32(n)], r32) emit {
+		"\tcmpw\t@L, @R\n"
+		"\tble\t@T\n" }
+	| IR_BGT(r32[RI32(n)], r32) emit {
+		"\tcmpw\t@L, @R\n"
+		"\tbgt\t@T\n" }
+	| IR_BGE(r32[RI32(n)], r32) emit {
+		"\tcmpw\t@L, @R\n"
+		"\tbge\t@T\n" }
+
+	| IR_BEQ(r32[RI32(n)], simm) emit {
+		"\tcmpwi\t@L, @RD\n"
+		"\tbeq\t@T\n" }
+	| IR_BNE(r32[RI32(n)], simm) emit {
+		"\tcmpwi\t@L, @RD\n"
+		"\tbne\t@T\n" }
+	| IR_BLT(r32[RI32(n)], simm) emit {
+		"\tcmpwi\t@L, @RD\n"
+		"\tblt\t@T\n" }
+	| IR_BLE(r32[RI32(n)], simm) emit {
+		"\tcmpwi\t@L, @RD\n"
+		"\tble\t@T\n" }
+	| IR_BGT(r32[RI32(n)], simm) emit {
+		"\tcmpwi\t@L, @RD\n"
+		"\tbgt\t@T\n" }
+	| IR_BGE(r32[RI32(n)], simm) emit {
+		"\tcmpwi\t@L, @RD\n"
+		"\tbge\t@T\n" }
+
+	| IR_BEQ(r32[RU32(n)], r32) emit {
+		"\tcmplw\t@L, @R\n"
+		"\tbeq\t@T\n" }
+	| IR_BNE(r32[RU32(n)], r32) emit {
+		"\tcmplw\t@L, @R\n"
+		"\tbne\t@T\n" }
+	| IR_BLT(r32[RU32(n)], r32) emit {
+		"\tcmplw\t@L, @R\n"
+		"\tblt\t@T\n" }
+	| IR_BLE(r32[RU32(n)], r32) emit {
+		"\tcmplw\t@L, @R\n"
+		"\tble\t@T\n" }
+	| IR_BGT(r32[RU32(n)], r32) emit {
+		"\tcmplw\t@L, @R\n"
+		"\tbgt\t@T\n" }
+	| IR_BGE(r32[RU32(n)], r32) emit {
+		"\tcmplw\t@L, @R\n"
+		"\tbge\t@T\n" }
+
+	| IR_BEQ(r32[RU32(n)], simm) emit {
+		"\tcmplwi\t@L, @RD\n"
+		"\tbeq\t@T\n" }
+	| IR_BNE(r32[RU32(n)], simm) emit {
+		"\tcmplwi\t@L, @RD\n"
+		"\tbne\t@T\n" }
+	| IR_BLT(r32[RU32(n)], simm) emit {
+		"\tcmplwi\t@L, @RD\n"
+		"\tblt\t@T\n" }
+	| IR_BLE(r32[RU32(n)], simm) emit {
+		"\tcmplwi\t@L, @RD\n"
+		"\tble\t@T\n" }
+	| IR_BGT(r32[RU32(n)], simm) emit {
+		"\tcmplwi\t@L, @RD\n"
+		"\tbgt\t@T\n" }
+	| IR_BGE(r32[RU32(n)], simm) emit {
+		"\tcmplwi\t@L, @RD\n"
+		"\tbge\t@T\n" }
+
+	| IR_BEQ(r64[RU64(n)], r64) emit {
+		"#fix!\tbequ32\n" }
+	| IR_BNE(r64[RU64(n)], r64) emit {
+		"#fix!\tbneu32\n" }
+	| IR_BLT(r64[RU64(n)], r64) emit {
+		"#fix!\tbltu32\n" }
+	| IR_BLE(r64[RU64(n)], r64) emit {
+		"#fix!\tbleu32\n" }
+	| IR_BGT(r64[RU64(n)], r64) emit {
+		"#fix!\tbgtu32\n" }
+	| IR_BGE(r64[RU64(n)], r64) emit {
+		"#fix!\tbgeu32\n" }
+
+	| IR_BEQ(f64, f64) emit {
+		"\tfcmpu\t0, @L, @R\n"
+		"\tbeq\t@T\n" }
+	| IR_BNE(f64, f64) emit {
+		"\tfcmpu\t0, @L, @R\n"
+		"\tbne\t@T\n" }
+	| IR_BLT(f64, f64) emit {
+		"\tfcmpu\t0, @L, @R\n"
+		"\tblt\t@T\n" }
+	| IR_BLE(f64, f64) emit {
+		"\tfcmpu\t0, @L, @R\n"
+		"\tble\t@T\n" }
+	| IR_BGT(f64, f64) emit {
+		"\tfcmpu\t0, @L, @R\n"
+		"\tbgt\t@T\n" }
+	| IR_BGE(f64, f64) emit {
+		"\tfcmpu\t0, @L, @R\n"
+		"\tbge\t@T\n" }
+	;
+
+int8:	IR_ICON[R8(n)]
+	;
+
+int16:	IR_ICON[R16(n)]
+	;
+
+int32:	IR_ICON[R32(n)]
+	;
+
+int64:	IR_ICON[R64(n)]
+	;
+
+simm:	IR_ICON[SIMM(ICON(n))]
+	;
+
+flt64:	IR_FCON[F64(n)]
+	;
+
+dstr8:	IR_REG[R8(n)]
+	;
+
+dstr16:	IR_REG[R16(n)]
+	;
+
+dstr32:	IR_REG[R32(n)]
+	;
+
+dstr64:	IR_REG[R64(n)]
+	;
+
+dstf64:	IR_REG[F64(n)]
+	;
+
+r8:	IR_REG[R8(n)]
+	| IR_GVAR[R8(n)] action { intoreg(&nctx) }
+	| stk8 action { intoreg(&nctx) }
+	| int8 action { intoreg(&nctx) }
+	| unexpr8 action { intoreg(&nctx) }
+	;
+
+unexpr8:
+	IR_CAST[R8(n)](r8) emit { "\trlwinm\t@A, @L, 0, 24, 31" }
+	| IR_CAST[R8(n)](r16) emit { "\trlwinm\t@A, @L, 0, 24, 31" }
+	| IR_CAST[R8(n)](r32) emit { "\trlwinm\t@A, @L, 0, 24, 31" }
+	| IR_CAST[R8(n)](r64) emit { "\trlwinm\t@A, @LS, 0, 24, 31" }
+	| loadz8
+	;
+
+loadz8:
+	IR_LOAD[R8(n)](r32)
+	    emit { "\tlbz\t@A, 0(@L)" }
+	    action { nor0(&nctx, path_l) }
+	| IR_LOAD[R8(n)](IR_GADDR)
+	    emit {
+		"\tlis\t@Y0, @L@@ha\n"
+		"\tlbz\t@A, @L@@l(@Y0)" }
+	    action { n->i_tmpregs = tmp32_1 }
+	| IR_LOAD[R8(n)](IR_ADD(r32, simm))
+	    emit { "\tlbz\t@A, @LRD(@LL)" }
+	    action { nor0(&nctx, path_ll) }
+	| IR_LOAD[R8(n)](IR_ADD(simm, r32))
+	    emit { "\tlbz\t@A, @LLD(@LR)" }
+	    action { nor0(&nctx, path_lr) }
+	| IR_LOAD[R8(n)](IR_ADD(r32, r32))
+	    emit { "\tlbzx\t@A, @LLD, @LR" }
+	    action { nor0(&nctx, path_ll) }
+	| IR_LOAD[R8(n)](IR_ADD(IR_GADDR, simm))
+	    emit {
+		"\tlis\t@Y0, (@LL + @LRD)@@ha\n"
+		"\tlbz\t@A, (@LL + @LRD)@@l(@Y0)" }
+	    action { n->i_tmpregs = tmp32_1 }
+	| IR_LOAD[R8(n)](IR_ADD(simm, IR_GADDR))
+	    emit {
+		"\tlis\t@Y0, (@LR + @LLD)@@ha\n"
+		"\tlbz\t@A, (@LR + @LLD)@@l(@Y0)" }
+	    action { n->i_tmpregs = tmp32_1 }
+	;
+
+r16:	IR_REG[R16(n)]
+	| IR_GVAR[R16(n)] action { intoreg(&nctx) }
+	| stk16 action { intoreg(&nctx) }
+	| int16 action { intoreg(&nctx) }
+	| unexpr16 action { intoreg(&nctx) }
+	;
+
+unexpr16:
+	IR_CAST[R16(n)](r8[RI8(n)]) emit { "\textsb\t@A, @L" }
+	| IR_CAST[R16(n)](r8[RU8(n)]) emit { "\trlwinm\t@A, 0, 24, 31" }
+	| IR_CAST[R16(n)](r16) emit { "\trlwinm\t@A, @L, 0, 16, 31" }
+	| IR_CAST[R16(n)](r32) emit { "\trlwinm\t@A, @L, 0, 16, 31" }
+	| IR_CAST[R16(n)](r64) emit { "\trlwinm\t@A, @LS, 0, 16, 31" }
+	| loadz16
+	;
+
+loadz16:
+	IR_LOAD[R16(n)](r32)
+	    emit { "\tlhz\t@A, 0(@L)" }
+	    action { nor0(&nctx, path_l) }
+	| IR_LOAD[R16(n)](IR_GADDR) emit {
+	    "\tlis\t@A, @L@@ha\n"
+	    "\tlhz\t@A, @L@@l(@A)" }
+	| IR_LOAD[R16(n)](IR_ADD(r32, simm))
+	    emit { "\tlhz\t@A, @LRD(@LL)" }
+	    action { nor0(&nctx, path_ll) }
+	| IR_LOAD[R16(n)](IR_ADD(simm, r32))
+	    emit { "\tlhz\t@A, @LLD(@LR)" }
+	    action { nor0(&nctx, path_lr) }
+	| IR_LOAD[R16(n)](IR_ADD(r32, r32))
+	    emit { "\tlhzx\t@A, @LL, @LR" }
+	    action { nor0(&nctx, path_ll) }
+	| IR_LOAD[R16(n)](IR_ADD(IR_GADDR, simm))
+	    emit {
+		"\tlis\t@Y0, (@LL + @LRD)@@ha\n"
+		"\tlhz\t@A, (@LL + @LRD)@@l(@Y0)" }
+	    action { n->i_tmpregs = tmp32_1 }
+	| IR_LOAD[R16(n)](IR_ADD(simm, IR_GADDR))
+	    emit {
+		"\tlis\t@Y0, (@LR + @LLD)@@ha\n"
+		"\tlhz\t@A, (@LR + @LLD)@@l(@Y0)" }
+	    action { n->i_tmpregs = tmp32_1 }
+	;
+
+loads16:
+	IR_LOAD[R16(n)](r32)
+	    emit { "\tlha\t@A, 0(@L)" }
+	    action { nor0(&nctx, path_l) }
+	| IR_LOAD[R16(n)](IR_GADDR)
+	    emit {
+		"\tlis\t@Y0, @L@@ha\n"
+		"\tlha\t@A, @L@@l(@Y0)" }
+	    action { n->i_tmpregs = tmp32_1 }
+	| IR_LOAD[R16(n)](IR_ADD(r32, simm))
+	    emit { "\tlha\t@A, @LRD(@LL)" }
+	    action { nor0(&nctx, path_ll) }
+	| IR_LOAD[R16(n)](IR_ADD(simm, r32))
+	    emit { "\tlha\t@A, @LLD(@LR)" }
+	    action { nor0(&nctx, path_lr) }
+	| IR_LOAD[R16(n)](IR_ADD(r32, r32))
+	    emit { "\tlhax\t@A, @LL, @LR" }
+	    action { nor0(&nctx, path_ll) }
+	| IR_LOAD[R16(n)](IR_ADD(IR_GADDR, simm))
+	    emit {
+		"\tlis\t@Y0, (@LL + @LRD)@@ha\n"
+		"\tlha\t@A, (@LL + @LRD)@@l(@Y0)" }
+	    action { n->i_tmpregs = tmp32_1 }
+	| IR_LOAD[R16(n)](IR_ADD(simm, IR_GADDR))
+	    emit {
+		"\tlis\t@Y0, (@LR + @LLD)@@ha\n"
+		"\tlha\t@A, (@LR + @LLD)@@l(@Y0)" }
+	    action { n->i_tmpregs = tmp32_1 }
+	;
+
+r32:	IR_REG[R32(n)]
+	| IR_GADDR action { intoreg(&nctx) }
+	| IR_LADDR action { intoreg(&nctx) }	
+	| IR_PADDR action { intoreg(&nctx) }
+	| IR_GVAR[R32(n)] action { intoreg(&nctx) }
+	| stk32 action { intoreg(&nctx) }
+	| int32 action { intoreg(&nctx) }
+	| unexpr32 action { intoreg(&nctx) }
+	| binexpr32 action { intoreg(&nctx) }
+	;
+
+unexpr32:
+	IR_CAST[R32(n)](loadz8[RU8(n)]) emit { "@L" }
+	| IR_CAST[R32(n)](r8)
+	| IR_CAST[R32(n)](loads16[RI16(n)]) emit { "@L" }
+	| IR_CAST[R32(n)](r16)
+	| IR_CAST[R32(n)](r32)
+	| IR_CAST[R32(n)](r64)
+
+	| IR_LOAD[R32(n)](r32) emit { "\tlwz\t@A, 0(@L)" }
+	    action { nor0(&nctx, path_l) }
+	| IR_LOAD[R32(n)](IR_GADDR)
+	    emit {
+		"\tlis\t@Y0, @L@@ha\n"
+		"\tlwz\t@A, @L@@l(@Y0)" }
+	    action { n->i_tmpregs = tmp32_1 }
+	| IR_LOAD[R32(n)](IR_ADD(r32, simm))
+	    emit { "\tlwz\t@A, @LRD(@LL)" }
+	    action { nor0(&nctx, path_ll) }
+	| IR_LOAD[R32(n)](IR_ADD(simm, r32)) emit { "\tlwz\t@A, @LLD(@LR)" }
+	    action { nor0(&nctx, path_lr) }
+	| IR_LOAD[R32(n)](IR_ADD(r32, r32)) emit { "\tlwzx\t@A, @LL, @LR" }
+	    action { nor0(&nctx, path_ll) }
+	| IR_LOAD[R32(n)](IR_ADD(IR_GADDR, simm))
+	    emit {
+		"\tlis\t@Y0, (@LL + @LRD)@@ha\n"
+		"\tlwz\t@A, (@LL + @LRD)@@l(@Y0)" }
+	    action { n->i_tmpregs = tmp32_1 }
+	| IR_LOAD[R32(n)](IR_ADD(simm, IR_GADDR))
+	    emit {
+		"\tlis\t@Y0, (@LR + @LLD)@@ha\n"
+		"\tlwz\t@A, (@LR + @LLD)@@l(@Y0)" }
+	    action { n->i_tmpregs = tmp32_1 }
+
+	| IR_BITFLIP(r32) emit { "\tnot\t@A, @L" }
+	;
+
+binexpr32:
+	IR_MUL(r32, simm) emit { "\tmulli\t@A, @L, @RD" }
+	| IR_MUL(simm, r32) emit { "\tmulli\t@A, @R, @LD" }
+	| IR_MUL(r32, r32) emit { "\tmul\t@A, @L, @R" }
+	| IR_DIV(r32, r32) emit { "\tdivw\t@A, @L, @R" }
+	| IR_MOD(r32, r32) emit { "#fix!\tmodr32" }
+	| IR_ADD(r32, simm)
+	    emit { "\taddi\t@A, @L, @RD" }
+	    action { nor0(&nctx, path_l) }
+	| IR_ADD(simm, r32)
+	    emit { "\taddi\t@A, @R, @LD" }
+	    action { nor0(&nctx, path_r) }
+	| IR_ADD(r32, r32) emit { "\tadd\t@A, @L, @R" }
+	| IR_SUB(r32, simm)
+	    emit { "\tsubi\t@A, @L, @RD" }
+	    action { nor0(&nctx, path_ll) }
+	| IR_SUB(r32, r32) emit { "\tsub\t@A, @L, @R" }
+	| IR_ARS(r32, r32) emit { "\tsraw\t@A, @L, @R" }
+	| IR_LRS(r32, r32) emit { "\tsrw\t@A, @L, @R" }
+	| IR_LS(r32, r32) emit { "\tslw\t@A, @L, @R" }
+	| IR_AND(r32, simm) emit { "\tandi.\t@A, @L, @RXW" }
+	| IR_AND(simm, r32) emit { "\tandi.\t@A, @R, @LXW" }
+	| IR_AND(r32, r32) emit { "\tand\t@A, @L, @R" }
+	| IR_XOR(r32, simm) emit { "\txori\t@A, @L, @RXW" }
+	| IR_XOR(simm, r32) emit { "\txori\t@A, @R, @LXW" }
+	| IR_XOR(r32, r32) emit { "\txor\t@A, @L, @R" }
+	| IR_OR(r32, simm) emit { "\tori\t@A, @L, @RXW" }
+	| IR_OR(simm, r32) emit { "\tori\t@A, @R, @LXW" }
+	| IR_OR(r32, r32) emit { "\tor\t@A, @L, @R" }
+	;
+
+r64:	IR_REG[R64(n)]
+	| stk64 action { intoreg(&nctx) }
+	| int64 action { intoreg(&nctx) }
+	| IR_CAST[R64(n)](r32) action { intoreg(&nctx) }
+	| IR_LOAD[R64(n)](r32) action { intoreg(&nctx), nor0(&nctx, path_l)  }
+	| binexpr64
+	;
+
+binexpr64:
+	IR_MUL(r64, r64) emit { "#fix!\tmulr64" }
+	| IR_DIV(r64, r64) emit { "#fix!\tdivr64" }
+	| IR_MOD(r64, r64) emit { "#fix!\tmodr64" }
+	| IR_ADD(r64, r64) emit { "#fix!\taddr64" }
+	| IR_SUB(r64, r64) emit { "#fix!\tsubr64" }
+	| IR_ARS(r64, r32) emit { "#fix!\tars r64, r32" }
+	| IR_LRS(r64, r32) emit { "#fix!\tlrs r64, r32" }
+	| IR_LS(r64, r64) emit { "#fix!\tls rr64 r32" }
+	| IR_AND(r64, r64) emit { "#fix!\tand r64, r64" }
+	| IR_XOR(r64, r64) emit { "#fix!\txor r64, r64" }
+	| IR_OR(r64, r64) emit { "#fix!\txor r64, r64" }
+	;
+
+f64:	IR_REG[F64(n)]
+	| IR_GVAR[F64(n)] action { intoreg(&nctx) }
+	| stkf64 action { intoreg(&nctx) }
+	| flt64 action { intoreg(&nctx) }
+	| IR_CAST[F64(n)](r32) action { intoreg(&nctx) }
+	| IR_LOAD[F64(n)](r32) action { intoreg(&nctx), nor0(&nctx, path_l) }
+	| IR_MUL(f64, f64) action { intoreg(&nctx) }
+	| IR_DIV(f64, f64) action { intoreg(&nctx) }
+	| IR_ADD(f64, f64) action { intoreg(&nctx) }
+	| IR_SUB(f64, f64) action { intoreg(&nctx) }
+	;
+
+stk8:	IR_LVAR[R8(n)]
+	| IR_PVAR[R8(n)]
+	;
+
+stk16:	IR_LVAR[R16(n)]
+	| IR_PVAR[R16(n)]
+	;
+
+stk32:	IR_LVAR[R32(n)]
+	| IR_PVAR[R32(n)]
+	;
+
+stk64:	IR_LVAR[R64(n)]
+	| IR_PVAR[R64(n)]
+	;
+
+stkf64:	IR_LVAR[F64(n)]
+	;
+
+%%
+
+static void
+asgtogvar(struct cg_ctx *cc)
+{
+	struct ir_insn *insn;
+
+	insn = (struct ir_insn *)cc->cc_insn;
+	insn->i_op = IR_ST;
+	insn->is_l->i_op = IR_GADDR;
+	insn->is_l->ie_type = &ir_ptr;
+	cc->cc_ctx->cc_changes = 1;
+}
+
+static void
+asgfromgvar(struct cg_ctx *cc)
+{
+	struct ir_insn *insn;
+
+	insn = (struct ir_insn *)cc->cc_insn;
+	insn->is_r->i_op = IR_GADDR;
+	insn->is_r->ie_type = &ir_ptr;
+	insn->is_r = ir_load(insn->is_r, insn->is_l->ie_type);
+	cc->cc_ctx->cc_changes = 1;
+}
+
+static void
+intoreg(struct cg_ctx *cc)
+{
+	struct ir_expr *reg, *x;
+	struct ir_insn *asg;
+
+	x = (struct ir_expr *)cc->cc_node;
+	reg = ir_newvreg(cc->cc_ctx->cc_fn, x->ie_type);
+	asg = ir_asg(reg, x);
+	ir_prepend_insn((struct ir_insn *)cc->cc_insn, asg);
+	reg = ir_virtreg(reg->ie_sym);
+	cc->cc_newnode = (struct ir *)reg;
+	cc->cc_ctx->cc_changes = 1;
+}
+
+static void
+nor0(struct cg_ctx *cc, int *path)
+{
+	int i;
+	struct ir *ir = cc->cc_node;
+
+	for (i = 0; path[i] != -1; i++)
+		ir = path[i] == 0 ? ir->i_l : ir->i_r;
+	if (ir->i_op != IR_REG) {
+		ir_dump_insn(stderr, (struct ir_insn *)cc->cc_insn);
+		fatalx("nor0: 0x%x", ir->i_op);
+	}
+	((struct ir_expr *)ir)->ie_regs = &rc_r0;
+}

@@ -1,0 +1,4 @@
+static char *
+foo(void)
+{
+}

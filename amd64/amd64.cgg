@@ -1,0 +1,458 @@
+/*
+ * Copyright (c) 2008 Stefan Kempf <sisnkemp@gmail.com>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+%{
+#include <sys/types.h>
+#include <sys/queue.h>
+
+#include <stdio.h>
+
+#include "comp/comp.h"
+#include "comp/ir.h"
+#include "comp/cgi.h"
+
+#define EXPRTYPE(n)	(((struct ir_expr *)(n))->ie_type)
+#define R8(n)		(IR_ISBYTE(EXPRTYPE(n)))
+#define RI8(n)		(IR_ISI8(EXPRTYPE(n)))
+#define RU8(n)		(IR_ISU8(EXPRTYPE(n)))
+#define R16(n)		(IR_ISWORD(EXPRTYPE(n)))
+#define RI16(n)		(IR_ISI16(EXPRTYPE(n)))
+#define RU16(n)		(IR_ISU16(EXPRTYPE(n)))
+#define R32(n)		(IR_ISLONG(EXPRTYPE(n)))
+#define RI32(n)		(IR_ISI32(EXPRTYPE(n)))
+#define RU32(n)		(IR_ISU32(EXPRTYPE(n)))
+#define R64(n)		(IR_ISQUAD(EXPRTYPE(n)) || IR_ISPTR(EXPRTYPE(n)))
+#define RI64(n)		(IR_ISI64(EXPRTYPE(n)))
+#define RU64(n)		(IR_ISU64(EXPRTYPE(n)) || IR_ISPTR(EXPRTYPE(n)))
+#define F64(n)		(IR_ISF64(EXPRTYPE(n)))
+
+static void twoaddr(struct cg_ctx *);
+static void intoreg(struct cg_ctx *);
+%}
+
+%nonterm asg, b, cb, insn, st
+%nonterm int8, int16, int32, flt64
+%nonterm dstr8, dstr16, dstr32, dstr64, dstf64
+%nonterm r8, r16, r32, r32, r64, f64
+%nonterm stk8, stk16, stk32, int64, stk64, stkf64
+
+%%
+
+insn:	asg
+	| b
+	| cb
+	| st
+	;
+
+asg:	IR_ASG(dstr8, r8) emit { "\tmovb\t@R, @L\n" }
+	| IR_ASG(dstr8, int8) emit { "\tmovb\t$@R, @L\n" }
+	| IR_ASG(dstr8, stk8) emit { "\tmovb\t@RO(@RF), @L\n" }
+	| IR_ASG(dstr8, unexpr8) emit { "@R\t#new\n" }
+
+	| IR_ASG(stk8, r8) emit {
+		"\tmovb\t@RZRB, @LO(@LF)\n" }
+	| IR_ASG(IR_GVAR[R8(n)], r8) emit {
+		"\tmovl\t@RZRB, @L\n" }
+
+	| IR_ASG(dstr16, r16) emit { "\tmovl\t@R, @L\n" }
+	| IR_ASG(dstr16, int16) emit { "\tmovl\t$@R, @L\n" }
+	| IR_ASG(dstr16, stk16) emit { "\tmovw\t@RO(@RF), @L\n" }
+
+	| IR_ASG(dstr16, unexpr16) emit { "@R\t#new\n" }
+
+	| IR_ASG(stk16, r16) emit {
+		"\tmovw\t@R, @LO(@LF)\n" }
+	| IR_ASG(IR_GVAR[R16(n)], r16) emit {
+		"\tmovw\t@L, @L\n" }
+
+	| IR_ASG(dstr32, r32) emit { "\tmovl\t@R, @L\n" }
+	| IR_ASG(dstr32, int32) emit { "\tmovl\t$@R, @L\n" }
+	| IR_ASG(dstr32, stk32) emit { "\tmovl\t@RO(@RF), @L\n" }
+	| IR_ASG(dstr32, IR_GVAR[R32(n)]) emit { "\tmovl\t@R, @L\n" }
+
+	| IR_ASG(dstr32, IR_LOAD[R32(n)](r64)) emit { "\tmovl\t(@RL), @L\n" }
+
+	| IR_ASG(dstr32, unexpr32) emit { "@R\t#new\n" }
+	| IR_ASG(dstr32, binexpr32)
+	    emit { "@R\t#new\n" }
+	    action { twoaddr(&nctx) }
+
+	| IR_ASG(stk32, r32) emit { "\tmovl\t@R, @LO(@LF)\n" }
+	| IR_ASG(IR_GVAR[R32(n)], r32) emit { "\tmovl\t@R, @L\n" }
+
+	| IR_ASG(dstr64, r64) emit { "\tmovq\t@R, @L\n" }
+	| IR_ASG(dstr64, int64) emit { "\tmovq\t$@R, @L\n" }
+	| IR_ASG(dstr64, stk64) emit { "\tmovq\t@RO(@RF), @L\n" }
+	| IR_ASG(dstr64, IR_GVAR[R64(n)]) emit { "\tmovq\t@R, @L\n" }
+	| IR_ASG(dstr64, IR_LADDR) emit { "\tleaq\t@RO(@RF), @L\n" }
+	| IR_ASG(dstr64, IR_PADDR) emit { "\tleaq\t@RO(@RF), @L\n" }
+	| IR_ASG(dstr64, IR_GADDR) emit { "\tleaq\t@R, @L\n" }
+
+	| IR_ASG(dstr64, unexpr64) emit { "@R\t#new\n" }
+
+	| IR_ASG(dstr64, binexpr64)
+	   emit { "@R\t#new\n" }
+	   action { twoaddr(&nctx) }
+
+	| IR_ASG(stk64, r64) emit { "\tmovq\t@R, @LO(@LF)\n" }
+	| IR_ASG(IR_GVAR[R64(n)], r64) emit { "\tmovq\t@R, @L\n" }
+
+	| IR_ASG(dstf64, f64) emit { "\tmovsd\t@R, @L\n" }
+	| IR_ASG(dstf64, flt64) emit { "@ZLD" }
+	| IR_ASG(dstf64, stkf64) emit { "\tmovsd\t@RO(@RF), @L\n" }
+	| IR_ASG(dstf64, IR_GVAR[F64(n)]) emit { "\tmovsd\t@R, @L\n" }
+	| IR_ASG(dstf64, IR_CAST[F64(n)](r32)) emit {
+		"\tcvtsi2sd\t@RL, @L\n" }
+	| IR_ASG(dstf64, IR_LOAD[F64(n)](r64)) emit { "\tmovsd\t(@RL), @L\n" }
+	| IR_ASG(dstf64, IR_ADD(f64, f64))
+	    action { twoaddr(&nctx); }
+	    emit { "\taddsd\t@RR, @L\n" }
+	| IR_ASG(dstf64, IR_SUB(f64, f64))
+	    action { twoaddr(&nctx); }
+	    emit { "\tsubsd\t@RR, @L\n" }
+	| IR_ASG(dstf64, IR_MUL(f64, f64))
+	    action { twoaddr(&nctx); }
+	    emit { "\tmulsd\t@RR, @L\n" }
+	| IR_ASG(dstf64, IR_DIV(f64, f64))
+	    action { twoaddr(&nctx); }
+	    emit { "\tdivsd\t@RR, @L\n" }
+
+	| IR_ASG(stk64, r64) emit { "\tmovq\t@R, @LO(@LF)\n" }
+	| IR_ASG(stkf64, f64) emit { "\tmovsd\t@R, @LO(@LF)\n" }
+	;
+
+st:	IR_ST(r64, r8) emit {
+		"\tmovb\t@RZRB, (@L)\n" }
+	| IR_ST(r64, r16) emit {
+		"\tmovw\t@RZRW, (@L)\n" }
+	| IR_ST(r64, r32) emit { "\tmovl\t@R, (@L)\n" }
+	| IR_ST(r64, r64) emit { "\tmovq\t@R, (@L)\n" }
+	| IR_ST(r64, f64) emit { "\tmovsd\t@R, (@L)\n" }
+	;
+
+b:	IR_B emit { "\tjmp\t@T\n" }
+	;
+
+cb:	IR_BEQ(r32[RI32(n)], r32[RI32(n)]) emit {
+		"\tcmpl\t@R, @L\n"
+		"\tje\t@T\n" }
+	| IR_BNE(r32[RI32(n)], r32[RI32(n)]) emit {
+		"\tcmpl\t@R, @L\n"
+		"\tjne\t@T\n" }
+	| IR_BLT(r32[RI32(n)], r32[RI32(n)]) emit {
+		"\tcmpl\t@R, @L\n"
+		"\tjl\t@T\n" }
+	| IR_BLE(r32[RI32(n)], r32[RI32(n)]) emit {
+		"\tcmpl\t@R, @L\n"
+		"\tjle\t@T\n" }
+	| IR_BGT(r32[RI32(n)], r32[RI32(n)]) emit {
+		"\tcmpl\t@R, @L\n"
+		"\tjg\t@T\n" }
+	| IR_BGE(r32[RI32(n)], r32[RI32(n)]) emit {
+		"\tcmpl\t@R, @L\n"
+		"\tjge\t@T\n" }
+
+	| IR_BEQ(r32[RU32(n)], r32[RU32(n)]) emit {
+		"\tcmpl\t@R, @L\n"
+		"\tje\t@T\n" }
+	| IR_BNE(r32[RU32(n)], r32[RU32(n)]) emit {
+		"\tcmpl\t@R, @L\n"
+		"\tjne\t@T\n" }
+	| IR_BLT(r32[RU32(n)], r32[RU32(n)]) emit {
+		"\tcmpl\t@R, @L\n"
+		"\tjb\t@T\n" }
+	| IR_BLE(r32[RU32(n)], r32[RU32(n)]) emit {
+		"\tcmpl\t@R, @L\n"
+		"\tjbe\t@T\n" }
+	| IR_BGT(r32[RU32(n)], r32[RU32(n)]) emit {
+		"\tcmpl\t@R, @L\n"
+		"\tja\t@T\n" }
+	| IR_BGE(r32[RU32(n)], r32[RU32(n)]) emit {
+		"\tcmpl\t@R, @L\n"
+		"\tjae\t@T\n" }
+
+	| IR_BEQ(r64[RI64(n)], r64[RI64(n)]) emit {
+		"\tcmpq\t@R, @L\n"
+		"\tje\t@T\n" }
+	| IR_BNE(r64[RI64(n)], r64[RI64(n)]) emit {
+		"\tcmpq\t@R, @L\n"
+		"\tjne\t@T\n" }
+	| IR_BLT(r64[RI64(n)], r64[RI64(n)]) emit {
+		"\tcmpq\t@R, @L\n"
+		"\tjl\t@T\n" }
+	| IR_BLE(r64[RI64(n)], r64[RI64(n)]) emit {
+		"\tcmpq\t@R, @L\n"
+		"\tjle\t@T\n" }
+	| IR_BGT(r64[RI64(n)], r64[RI64(n)]) emit {
+		"\tcmpq\t@R, @L\n"
+		"\tjb\t@T\n" }
+	| IR_BGE(r64[RI64(n)], r64[RI64(n)]) emit {
+		"\tcmpq\t@R, @L\n"
+		"\tjbe\t@T\n" }
+
+	| IR_BEQ(r64[RU64(n)], r64[RU64(n)]) emit {
+		"\tcmpq\t@R, @L\n"
+		"\tje\t@T\n" }
+	| IR_BNE(r64[RU64(n)], r64[RU64(n)]) emit {
+		"\tcmpq\t@R, @L\n"
+		"\tjne\t@T\n" }
+	| IR_BLT(r64[RU64(n)], r64[RU64(n)]) emit {
+		"\tcmpq\t@R, @L\n"
+		"\tjb\t@T\n" }
+	| IR_BLE(r64[RU64(n)], r64[RU64(n)]) emit {
+		"\tcmpq\t@R, @L\n"
+		"\tjbe\t@T\n" }
+	| IR_BGT(r64[RU64(n)], r64[RU64(n)]) emit {
+		"\tcmpq\t@R, @L\n"
+		"\tja\t@T\n" }
+	| IR_BGE(r64[RU64(n)], r64[RU64(n)]) emit {
+		"\tcmpq\t@R, @L\n"
+		"\tjae\t@T\n" }
+
+	| IR_BEQ(f64, f64) emit {
+		"\tucomisd\t@R, @L\n"
+		"\tje\t@T\n" }
+	| IR_BNE(f64, f64) emit {
+		"\tucomisd\t@R, @L\n"
+		"\tjne\t@T\n" }
+	| IR_BLT(f64, f64) emit {
+		"\tucomisd\t@R, @L\n"
+		"\tjb\t@T\n" }
+	| IR_BLE(f64, f64) emit {
+		"\tucomisd\t@R, @L\n"
+		"\tjbe\t@T\n" }
+	| IR_BGT(f64, f64) emit {
+		"\tucomisd\t@R, @L\n"
+		"\tja\t@T\n" }
+	| IR_BGE(f64, f64) emit {
+		"\tucomisd\t@R, @L\n"
+		"\tjae\t@T\n" }
+	;
+
+int8:	IR_ICON[R8(n)]
+	;
+
+int16:	IR_ICON[R16(n)]
+	;
+
+int32:	IR_ICON[R32(n)]
+	;
+
+int64:	IR_ICON[R64(n)]
+	;
+
+flt64:	IR_FCON[F64(n)]
+	;
+
+dstr8:	IR_REG[R8(n)]
+	;
+
+dstr16:	IR_REG[R16(n)]
+	;
+
+dstr32:	IR_REG[R32(n)]
+	;
+
+dstr64:	IR_REG[R64(n)]
+	;
+
+dstf64:	IR_REG[F64(n)]
+	;
+
+r8:	IR_REG[R8(n)]
+	| IR_GVAR[R8(n)] action { intoreg(&nctx) }
+	| stk8 action { intoreg(&nctx) }
+	| stk8 action { intoreg(&nctx) }
+	| int8 action { intoreg(&nctx) }
+	| unexpr8 action { intoreg(&nctx) }
+	;
+
+unexpr8:
+	IR_CAST[R8(n)](r8) emit { "\tmovb\t@L, @A" }
+	| IR_CAST[R8(n)](r16) emit { "\tmovw\t@L, @AZRW" }
+	| IR_CAST[R8(n)](r32) emit { "\tmovl\t@L, @AZRL" }
+	| IR_CAST[R8(n)](r64) emit { "\tmovl\t@L, @AZRQ" }
+	| IR_LOAD[R8(n)](r64) emit { "\tmovb\t(@L), @A" }
+	;
+
+r16:	IR_REG[R16(n)]
+	| IR_GVAR[R16(n)] action { intoreg(&nctx) }
+	| stk16 action { intoreg(&nctx) }
+	| int16 action { intoreg(&nctx) }
+	| unexpr16 action { intoreg(&nctx) }
+	;
+
+unexpr16:
+	IR_CAST[R16(n)](r8[RI8(n)]) emit { "\tmovsbw\t@L, @A" }
+	| IR_CAST[R16(n)](r8[RU8(n)]) emit { "\tmovzbw\t@L, @A" }
+	| IR_CAST[R16(n)](r16) emit { "\tmovw\t@L, @A" }
+	| IR_CAST[R16(n)](r32) emit { "\tmovw\t@LZRW, @A" }
+	| IR_CAST[R16(n)](r64) emit { "\tmovw\t@LZRW, @A" }
+
+	| IR_LOAD[R16(n)](r64) emit { "\tmovw\t(@L), @A" }
+	;
+
+r32:	IR_REG[R32(n)]
+	| IR_GVAR[R32(n)] action { intoreg(&nctx) }
+	| stk32 action { intoreg(&nctx) }
+	| int32 action { intoreg(&nctx) }
+	| unexpr32 action { intoreg(&nctx) }
+	| binexpr32 action { intoreg(&nctx) }
+	;
+
+unexpr32:
+	IR_CAST[R32(n)](r8[RI8(n)]) emit { "\tmovsbl\t@L, @A" }
+	| IR_CAST[R32(n)](r8[RU8(n)]) emit { "\tmovzbl\t@L, @A" }
+	| IR_CAST[R32(n)](r16[RI16(n)]) emit { "\tmovswl\t@L, @A" }
+	| IR_CAST[R32(n)](r16[RU16(n)]) emit { "\tmovzwl\t@L, @A" }
+	| IR_CAST[R32(n)](r32) emit { "\tmovl\t@L, @A" }
+	| IR_CAST[R32(n)](r64) emit { "\tmovl\t@LZRL, @A" }
+
+	| IR_LOAD[R32(n)](r64) emit { "\tmovl\t(@L), @A" }
+	;
+
+binexpr32:
+	IR_MUL(r32, r32) emit { "\timull\t@R, @L" }
+	| IR_DIV(r32, r32) emit { "\t#fix! divr32" } /* TODO: regs */
+	| IR_MOD(r32, r32) emit { "#fix! modr32" } /* TODO */
+	| IR_ADD(r32, r32) emit { "\taddl\t@R, @L" }
+	| IR_SUB(r32, r32) emit { "\tsubl\t@R, @L" }
+	| IR_ARS(r32, r32) emit { "#fix! arsr32" } /* TODO: Force to ecx */
+	| IR_LRS(r32, r32) emit { "#fix! lsr32" } /* TODO */
+	| IR_LS(r32, r32) emit { "#fix! lsr32" }
+	| IR_AND(r32, r32) emit { "\tandl\t@R, @L" }
+	| IR_XOR(r32, r32) emit { "\txorl\t@R, @L" }
+	| IR_OR(r32, r32) emit { "\torl\t@R, @L" }
+	;
+
+r64:	IR_REG[R64(n)]
+	| IR_GADDR action { intoreg(&nctx) }
+	| IR_LADDR action { intoreg(&nctx) }
+	| IR_PADDR action { intoreg(&nctx) }
+	| IR_GVAR[R64(n)] action { intoreg(&nctx) }
+	| stk64 action { intoreg(&nctx) }
+	| int64 action { intoreg(&nctx) }
+	| unexpr64 action { intoreg(&nctx) }
+	| binexpr64 action { intoreg(&nctx) }
+	;
+
+unexpr64:
+	IR_CAST[R64(n)](r8[RI8(n)]) emit { "\tmovsbq\t@L, @A" }
+	| IR_CAST[R64(n)](r8[RU8(n)]) emit { "\tmovzbl\t@L, @AZRL" }
+	| IR_CAST[R64(n)](r16[RI16(n)]) emit { "\tmovswq\t@L, @A" }
+	| IR_CAST[R64(n)](r16[RU16(n)]) emit { "\tmovzwl\t@L, @AZRL" }
+	| IR_CAST[R64(n)](r32[RI32(n)]) emit { "\tmovslq\t@L, @A" }
+	| IR_CAST[R64(n)](r32[RU32(n)]) emit { "\tmovl\t@L, @AZRL" }
+	| IR_CAST[R64(n)](r64) emit { "\tmovq\t@R, @L" }
+
+	| IR_LOAD[R64(n)](r64) emit { "\tmovq\t(@L), @A" }
+	;
+
+binexpr64:
+	IR_MUL(r64, r64) emit { "\timulq\t@R, @L" }
+	| IR_DIV(r64, r64) emit { "#fix! divr64" }
+	| IR_MOD(r64, r64) emit { "#ifx! modr64" }
+	| IR_ADD(r64, r64) emit { "\taddq\t@R, @L" }
+	| IR_SUB(r64, r64) emit { "\tsubq\t@R, @L" }
+	| IR_ARS(r64, r32) emit { "#fix! ars64_32" }
+	| IR_LRS(r64, r32) emit { "#fix! lrs64_32" }
+	| IR_LS(r64, r64) emit { "#fix! ls32" }
+	| IR_AND(r64, r64) emit { "\tandq\t@R, @L" }
+	| IR_XOR(r64, r64) emit { "\txorq\t@R, @L" }
+	| IR_OR(r64, r64) emit { "\torq\t@R, @L" }
+	| IR_ADD(r64, r32) emit { "#fix! add64_32" }
+	;
+
+f64:	IR_REG[F64(n)]
+	| IR_GVAR[F64(n)] action { intoreg(&nctx) }
+	| stkf64 action { intoreg(&nctx) }
+	| flt64 action { intoreg(&nctx) }
+	| IR_CAST[F64(n)](r32) action { intoreg(&nctx) }
+	| IR_LOAD[F64(n)](r64) action { intoreg(&nctx) }
+	| IR_ADD(f64, f64) action { intoreg(&nctx) }
+	| IR_SUB(f64, f64) action { intoreg(&nctx) }
+	| IR_MUL(f64, f64) action { intoreg(&nctx) }
+	| IR_DIV(f64, f64) action { intoreg(&nctx) }
+	;
+
+stk8:	IR_LVAR[R8(n)]
+	| IR_PVAR[R8(n)]
+	;
+
+stk16:	IR_LVAR[R16(n)]
+	| IR_PVAR[R16(n)]
+	;
+
+stk32:	IR_LVAR[R32(n)]
+	| IR_PVAR[R32(n)]
+	;
+
+stk64:	IR_LVAR[R64(n)]
+	| IR_PVAR[R64(n)]
+	;
+
+stkf64:	IR_LVAR[F64(n)]
+	;
+
+%%
+
+static void
+twoaddr(struct cg_ctx *cc)
+{
+	struct ir_expr *reg;
+	struct ir_stasg *asg = (struct ir_stasg *)cc->cc_insn;
+	struct ir_insn *nasg;
+	struct ir_symbol *dst, *l, *r;
+
+	reg = asg->is_l;
+	dst = reg->ie_sym;
+	l = asg->is_r->ie_l->ie_sym;
+	r = asg->is_r->ie_r->ie_sym;
+
+	if (dst == l)
+		return;
+	if (asg->is_r->i_op == IR_ADD || asg->is_r->i_op == IR_MUL) {
+		r = asg->is_r->ie_r->ie_sym;
+		if (dst == r) {
+			reg = asg->is_r->ie_r;
+			asg->is_r->ie_r = asg->is_r->ie_l;
+			asg->is_r->ie_l = reg;
+			return;
+		}
+	}
+
+	reg = ir_virtreg(reg->ie_sym);
+	nasg = ir_asg(reg, asg->is_r->ie_l);
+	reg = ir_virtreg(dst);
+	asg->is_r->ie_l = reg;
+	ir_prepend_insn((struct ir_insn *)asg, nasg);
+	cc->cc_ctx->cc_changes = 1;
+}
+
+static void
+intoreg(struct cg_ctx *cc)
+{
+	struct ir_expr *reg, *x;
+	struct ir_insn *asg;
+
+	x = (struct ir_expr *)cc->cc_node;
+	reg = ir_newvreg(cc->cc_ctx->cc_fn, x->ie_type);
+	asg = ir_asg(reg, x);
+	ir_prepend_insn((struct ir_insn *)cc->cc_insn, asg);
+	reg = ir_virtreg(reg->ie_sym);
+	cc->cc_newnode = (struct ir *)reg;
+	cc->cc_ctx->cc_changes = 1;
+}
